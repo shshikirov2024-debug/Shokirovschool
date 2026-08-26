@@ -1,29 +1,26 @@
 """
 Shokirov School Telegram kanali uchun kunlik avtomatik post bot.
-
-Har kuni (GitHub Actions cron orqali) ishga tushadi va kanalga:
-  1. Farg'ona shahri uchun kunlik ob-havo ma'lumotini
-  2. Ta'lim/o'quv bo'yicha kunlik foydali maslahat yoki yangilikni
+Har kuni (GitHub Actions cron orqali) ishga tushadi va bir nechta kanalga:
+1. Farg'ona shahri uchun kunlik ob-havo ma'lumotini
+2. Ta'lim/o'quv bo'yicha kunlik foydali maslahat yoki yangilikni
 yuboradi.
 
 Kerakli maxfiy ma'lumotlar (GitHub repo -> Settings -> Secrets and variables -> Actions):
-  TELEGRAM_BOT_TOKEN  - BotFather'dan olingan token
-  TELEGRAM_CHANNEL_ID - Kanal username (masalan: @shokirovschool) yoki chat_id
+TELEGRAM_BOT_TOKEN     - BotFather'dan olingan token
+TELEGRAM_CHANNEL_ID    - Birinchi kanal (masalan: @shokirovschool)
+TELEGRAM_CHANNEL_ID_2  - Ikkinchi kanal (masalan: @zamonaviyfiziklar)
 
 Ob-havo manbasi: Open-Meteo (bepul, API kalit talab qilmaydi)
 """
-
 import os
-import random
 import sys
 from datetime import datetime
-
 import requests
 
 # ---------- Sozlamalar ----------
-
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHANNEL_ID = os.environ.get("TELEGRAM_CHANNEL_ID")
+TELEGRAM_CHANNEL_ID_2 = os.environ.get("TELEGRAM_CHANNEL_ID_2")
 
 # Farg'ona shahri koordinatalari
 CITY_NAME = "Farg'ona"
@@ -55,8 +52,6 @@ WEATHER_CODE_MAP = {
     99: "Kuchli do'l bilan momaqaldiroq ⛈",
 }
 
-# Ta'lim bo'yicha kunlik maslahatlar/motivatsion matnlar to'plami.
-# Xohlasangiz bu ro'yxatga istalgancha qo'shimcha qilib borishingiz mumkin.
 EDU_TIPS = [
     "📌 Har kuni 30 daqiqa takrorlash, bir marta 5 soat o'qishdan ko'ra samaraliroq. Muntazamlik — muvaffaqiyat kaliti!",
     "📌 Test yechayotganda avval oson savollarni belgilab, keyin qiyinlariga qayting — vaqtni tejaysiz.",
@@ -83,12 +78,10 @@ def get_weather() -> str:
         resp = requests.get(url, timeout=15)
         resp.raise_for_status()
         data = resp.json()
-
         code = data["daily"]["weathercode"][0]
         t_max = round(data["daily"]["temperature_2m_max"][0])
         t_min = round(data["daily"]["temperature_2m_min"][0])
         description = WEATHER_CODE_MAP.get(code, "Ma'lumot mavjud emas")
-
         return (
             f"🌤 <b>{CITY_NAME} uchun bugungi ob-havo</b>\n\n"
             f"{description}\n"
@@ -100,11 +93,6 @@ def get_weather() -> str:
 
 
 def get_edu_tip() -> str:
-    """Kunlik ta'lim maslahatini kun tartib raqamiga qarab tanlaydi.
-
-    (random.choice o'rniga kun bo'yicha tanlansa, bot bir necha marta ishga
-    tushirilganda bir xil kunda bir xil maslahat chiqishi ta'minlanadi.)
-    """
     day_index = datetime.now().timetuple().tm_yday
     tip = EDU_TIPS[day_index % len(EDU_TIPS)]
     return f"🎓 <b>Kunlik ta'lim maslahati</b>\n\n{tip}"
@@ -124,27 +112,25 @@ def build_message() -> str:
     return "\n".join(parts)
 
 
-def send_to_telegram(text: str) -> None:
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHANNEL_ID:
+def send_to_telegram(text: str, channel_id: str) -> None:
+    if not TELEGRAM_BOT_TOKEN or not channel_id:
         print(
-            "XATOLIK: TELEGRAM_BOT_TOKEN yoki TELEGRAM_CHANNEL_ID o'rnatilmagan. "
-            "GitHub repo Secrets bo'limida ularni qo'shing.",
+            "XATOLIK: TELEGRAM_BOT_TOKEN yoki channel_id o'rnatilmagan.",
             file=sys.stderr,
         )
-        sys.exit(1)
-
+        return
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {
-        "chat_id": TELEGRAM_CHANNEL_ID,
+        "chat_id": channel_id,
         "text": text,
         "parse_mode": "HTML",
         "disable_web_page_preview": True,
     }
     resp = requests.post(url, data=payload, timeout=15)
     if resp.status_code != 200:
-        print(f"Telegramga yuborishda xatolik: {resp.status_code} {resp.text}", file=sys.stderr)
-        sys.exit(1)
-    print("Post muvaffaqiyatli yuborildi.")
+        print(f"[{channel_id}] Telegramga yuborishda xatolik: {resp.status_code} {resp.text}", file=sys.stderr)
+    else:
+        print(f"[{channel_id}] Post muvaffaqiyatli yuborildi.")
 
 
 if __name__ == "__main__":
@@ -152,4 +138,15 @@ if __name__ == "__main__":
     print("--- Yuborilayotgan xabar ---")
     print(message)
     print("----------------------------")
-    send_to_telegram(message)
+
+    if not TELEGRAM_BOT_TOKEN:
+        print("XATOLIK: TELEGRAM_BOT_TOKEN o'rnatilmagan.", file=sys.stderr)
+        sys.exit(1)
+
+    channels = [c for c in [TELEGRAM_CHANNEL_ID, TELEGRAM_CHANNEL_ID_2] if c]
+    if not channels:
+        print("XATOLIK: hech qanday kanal ID o'rnatilmagan.", file=sys.stderr)
+        sys.exit(1)
+
+    for ch in channels:
+        send_to_telegram(message, ch)
