@@ -11,6 +11,13 @@ TELEGRAM_CHANNEL_ID    - Birinchi kanal (masalan: @shokirovschool)
 TELEGRAM_CHANNEL_ID_2  - Ikkinchi kanal (masalan: @zamonaviyfiziklar)
 
 Ob-havo manbasi: Open-Meteo (bepul, API kalit talab qilmaydi)
+
+MUHIM O'ZGARISH: endi Telegramga yuborish muvaffaqiyatsiz bo'lsa
+(masalan, bot kanaldan admin sifatida olib tashlangan, token yoki
+channel ID noto'g'ri bo'lsa), skript ENDI ANIQ XATOLIK bilan
+to'xtaydi (exit code 1) va GitHub Actions'da qizil (failed) belgi
+chiqadi. Avval bu holatda ham "Success" ko'rsatilar edi va muammo
+sezilmasdan qolar edi.
 """
 import os
 import sys
@@ -112,13 +119,14 @@ def build_message() -> str:
     return "\n".join(parts)
 
 
-def send_to_telegram(text: str, channel_id: str) -> None:
+def send_to_telegram(text: str, channel_id: str) -> bool:
+    """Telegramga xabar yuboradi. Muvaffaqiyatli bo'lsa True, aks holda False qaytaradi."""
     if not TELEGRAM_BOT_TOKEN or not channel_id:
         print(
             "XATOLIK: TELEGRAM_BOT_TOKEN yoki channel_id o'rnatilmagan.",
             file=sys.stderr,
         )
-        return
+        return False
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {
         "chat_id": channel_id,
@@ -126,11 +134,18 @@ def send_to_telegram(text: str, channel_id: str) -> None:
         "parse_mode": "HTML",
         "disable_web_page_preview": True,
     }
-    resp = requests.post(url, data=payload, timeout=15)
+    try:
+        resp = requests.post(url, data=payload, timeout=15)
+    except Exception as e:  # noqa: BLE001
+        print(f"[{channel_id}] Telegramga ulanishda xatolik: {e}", file=sys.stderr)
+        return False
+
     if resp.status_code != 200:
         print(f"[{channel_id}] Telegramga yuborishda xatolik: {resp.status_code} {resp.text}", file=sys.stderr)
-    else:
-        print(f"[{channel_id}] Post muvaffaqiyatli yuborildi.")
+        return False
+
+    print(f"[{channel_id}] Post muvaffaqiyatli yuborildi.")
+    return True
 
 
 if __name__ == "__main__":
@@ -148,5 +163,12 @@ if __name__ == "__main__":
         print("XATOLIK: hech qanday kanal ID o'rnatilmagan.", file=sys.stderr)
         sys.exit(1)
 
-    for ch in channels:
-        send_to_telegram(message, ch)
+    # Har bir kanalga yuborishga urinamiz (bittasi xato bo'lsa ham,
+    # qolganlariga urinishda davom etamiz), lekin oxirida kamida
+    # bitta xato bo'lsa - butun job'ni "failed" deb belgilaymiz,
+    # shunda GitHub Actions'da muammo ko'rinadi va yashirin qolmaydi.
+    results = [send_to_telegram(message, ch) for ch in channels]
+
+    if not all(results):
+        print("XATOLIK: bir yoki bir nechta kanalga xabar yuborilmadi.", file=sys.stderr)
+        sys.exit(1)
