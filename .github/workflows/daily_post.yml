@@ -3,7 +3,7 @@ name: Kunlik post - Shokirov School
 on:
   schedule:
     # 03:00 UTC = 08:00 Toshkent/Farg'ona vaqti (UTC+5)
-    - cron: "0 3 * * *"
+    - cron: "5 3 * * *"
   workflow_dispatch: {}   # "Run workflow" tugmasi orqali qo'lda ham ishga tushirish mumkin
 
 jobs:
